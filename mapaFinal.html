@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2200ff">
+    <title>OpenStreetMap</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="manifest" href="manifest.json">
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(reg => console.log('Service Worker registrado:', reg.scope))
+                .catch(err => console.error('Error al registrar el Service Worker:', err));
+        }
+    </script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCTPFh2UsGQbN3QxPE0dWKNZh4PvPIr37s",
+            authDomain: "incidenciastorreblanca.firebaseapp.com",
+            projectId: "incidenciastorreblanca",
+            storageBucket: "incidenciastorreblanca.firebasestorage.app",
+            messagingSenderId: "779483290787",
+            appId: "1:779483290787:web:98692e78fd3d9786a9b316"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+    </script>
+    
+    <style>
+        #mi_mapa {
+            height: 800px;
+            width: 1000px;
+        }
+        .popup-content {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            width: 300px;
+        }
+        .popup-content label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .popup-content textarea {
+            width: 100%;
+            height: 60px;
+            resize: none;
+        }
+        .popup-content button {
+            margin-top: 5px;
+            background-color: #2200ff;
+            color: white;
+            border: none;
+            padding: 5px;
+            cursor: pointer;
+        }
+        .fecha {
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div id="mi_mapa"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    
+    <script>
+        let map = L.map('mi_mapa').setView([40.21984, 0.19619], 16);
+
+        const redIcon = L.icon({
+            iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/red-dot.png',
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32]
+        });
+
+        function saveMarkers(markers) {
+            markers.forEach(marker => {
+                db.collection("marcadores").add(marker)
+                .then(() => console.log("Marcador guardado en Firestore"))
+                .catch(error => console.error("Error al guardar marcador:", error));
+            });
+        }
+
+        function loadMarkers() {
+            db.collection("marcadores").get().then(querySnapshot => {
+                querySnapshot.forEach(doc => {
+                const data = doc.data();
+                if (!data.resuelto) {
+                createMarker(data.lat, data.lng, data.tipo, data.descripcion, data.fecha, data.organizacion, data.resuelto);
+                }
+                });
+            });
+        }
+
+
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        function createMarker(lat, lng, tipo, descripcion, fecha, organizacion, resuelto) {
+            let popupContent = document.createElement("div");
+            popupContent.classList.add("popup-content");
+
+            if (!fecha) {
+                fecha = new Date().toLocaleString();
+            }
+
+            let markerDate = new Date(fecha);
+            let currentDate = new Date();
+            let oneMonthAgo = new Date(currentDate);
+            oneMonthAgo.setMonth(currentDate.getMonth() - 1);
+
+            let markerOptions = {};
+            if (markerDate < oneMonthAgo) {
+                markerOptions.icon = redIcon;
+            }
+
+            let fechaLabel = document.createElement("div");
+            fechaLabel.textContent = `Creado el: ${fecha}`;
+            fechaLabel.classList.add("fecha");
+
+            let labelTipo = document.createElement("label");
+            labelTipo.textContent = "Incidente";
+
+            let selectTipo = document.createElement("select");
+            let placeholderOption = document.createElement("option");
+            placeholderOption.textContent = "Seleccione una opción";
+            placeholderOption.value = "";
+            placeholderOption.disabled = true;
+            if (!tipo) placeholderOption.selected = true;
+            selectTipo.appendChild(placeholderOption);
+
+            let opciones = ["Aceras", "Agua Potable", "Alcantarillado", "Alumbrado", "Animales",
+                "Plagas", "Calzada", "Edificios Municipales", "Fachadas", "Limpieza Viaria",
+                "Mobiliario Urbano", "Parques y Jardines", "Pavimentación", "Residuos y contenedores", "Señalización",
+                "Solares", "Zonas Rurales", "Playas", "Otros"];
+            opciones.forEach(opcion => {
+                let optionElement = document.createElement("option");
+                optionElement.value = opcion;
+                optionElement.textContent = opcion;
+                if (opcion === tipo) optionElement.selected = true;
+                selectTipo.appendChild(optionElement);
+            });
+
+            let labelDesc = document.createElement("label");
+            labelDesc.textContent = "Describa el incidente detalladamente";
+
+            let input = document.createElement("textarea");
+            input.placeholder = "Escriba aquí...";
+            input.rows = 4;
+            input.value = descripcion;
+
+            let labelOrg = document.createElement("label");
+            labelOrg.textContent = "Organización encargada";
+
+            let selectOrg = document.createElement("select");
+            let placeholderOptionOrg = document.createElement("option");
+            placeholderOptionOrg.textContent = "Seleccione una organización";
+            placeholderOptionOrg.value = "";
+            placeholderOptionOrg.disabled = true;
+            if (!organizacion) placeholderOptionOrg.selected = true;
+            selectOrg.appendChild(placeholderOptionOrg);
+
+            let organizaciones = ["Policía Local", "Brigada de obras y servicios", "Electricidad", "Jardineria", "Fontnería", "Obras y construcciones"];
+            organizaciones.forEach(org => {
+                let optionElementOrg = document.createElement("option");
+                optionElementOrg.value = org;
+                optionElementOrg.textContent = org;
+                if (org === organizacion) optionElementOrg.selected = true;
+                selectOrg.appendChild(optionElementOrg);
+            });
+
+            selectTipo.addEventListener('change', updateStoredMarker);
+            input.addEventListener('input', updateStoredMarker);
+            selectOrg.addEventListener('change', updateStoredMarker);
+
+            function updateStoredMarker() {
+                const markerData = {
+                    lat, lng, tipo: selectTipo.value, descripcion: input.value, fecha, organizacion: selectOrg.value
+                };
+
+                db.collection("marcadores").where("lat", "==", lat).where("lng", "==", lng)
+                    .get()
+                    .then(snapshot => {
+                        snapshot.forEach(doc => {
+                            doc.ref.update(markerData);
+                        });
+                    });
+            }
+
+            let resolveButton = document.createElement("button");
+            resolveButton.textContent = "Resolver Incidencia";
+            resolveButton.onclick = function () {
+                db.collection("marcadores").where("lat", "==", lat).where("lng", "==", lng)
+                    .get()
+                    .then(snapshot => {
+                        snapshot.forEach(doc => {
+                            doc.ref.update({ resuelto: true });
+                        });
+                    });
+
+                map.eachLayer(function (layer) {
+                    if (layer._latlng && layer._latlng.lat === lat && layer._latlng.lng === lng) {
+                        map.removeLayer(layer);
+                    }
+                });
+            };
+
+            let deleteButton = document.createElement("button");
+            deleteButton.textContent = "Eliminar Marcador";
+            deleteButton.style.backgroundColor = "red";
+            deleteButton.onclick = function () {
+                if (confirm("¿Estás seguro de que deseas eliminar este marcador? Esta acción no se puede deshacer.")) {
+                    db.collection("marcadores").where("lat", "==", lat).where("lng", "==", lng)
+                        .get()
+                        .then(snapshot => {
+                            snapshot.forEach(doc => {
+                                doc.ref.delete().then(() => {
+                                    console.log("Marcador eliminado de Firestore");
+                                });
+                            });
+                        });
+
+                    map.eachLayer(function (layer) {
+                        if (layer._latlng && layer._latlng.lat === lat && layer._latlng.lng === lng) {
+                            map.removeLayer(layer);
+                        }
+                    });
+                }
+            };
+
+            popupContent.appendChild(fechaLabel);
+            popupContent.appendChild(labelTipo);
+            popupContent.appendChild(selectTipo);
+            popupContent.appendChild(labelDesc);
+            popupContent.appendChild(input);
+            popupContent.appendChild(labelOrg);
+            popupContent.appendChild(selectOrg);
+            popupContent.appendChild(resolveButton);
+            popupContent.appendChild(deleteButton);
+
+            let marker = L.marker([lat, lng], markerOptions).addTo(map).bindPopup(popupContent);
+        }
+
+        function onMapClick(e) {
+            let lat = e.latlng.lat;
+            let lng = e.latlng.lng;
+            let fecha = new Date().toLocaleString();
+            createMarker(lat, lng, "", "", fecha, "");
+            let markers = JSON.parse(localStorage.getItem('markers')) || [];
+            markers.push({ lat, lng, tipo: "", descripcion: "", fecha, organizacion: "" });
+            saveMarkers(markers);
+        }
+
+        map.on('click', onMapClick);
+        loadMarkers();
+    </script>
+</body>
+</html>
